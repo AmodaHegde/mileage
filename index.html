@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body { font-family: sans-serif; margin: 0; padding: 15px; background: #f4f4f4; }
+input, button { width: 100%; margin-bottom: 12px; padding: 12px; box-sizing: border-box; font-size: 16px; }
+.screen { display: none; background: #fff; padding: 15px; border-radius: 8px; }
+#home { display: block; }
+.log-item { border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 15px; }
+img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 10px; }
+nav { display: flex; gap: 10px; margin-bottom: 15px; }
+nav button { margin-bottom: 0; background: #007bff; color: white; border: none; border-radius: 4px; }
+button.success { background: #28a745; color: white; border: none; font-weight: bold; }
+button.warning { background: #ffc107; color: black; border: none; font-weight: bold; }
+</style>
+</head>
+<body>
+<nav>
+<button onclick="show('home')">Home</button>
+<button onclick="show('logs'); loadLogs()">Logs</button>
+<button onclick="show('settings'); loadKey()">Config</button>
+</nav>
+
+<div id="home" class="screen">
+<h2>New Fuel Entry</h2>
+<input type="file" id="pic" accept="image/*" capture="environment">
+<button class="warning" onclick="extractData()" id="extractBtn">🪄 Auto-Extract from Photo</button>
+<input type="number" id="odo" placeholder="Odometer Reading (km)">
+<input type="number" id="liters" placeholder="Fuel Added (Liters)">
+<input type="number" id="price" placeholder="Total Bill Price (₹)">
+<input type="text" id="bunk" placeholder="Petrol Bunk Name">
+<button class="success" onclick="save()">Save Log</button>
+</div>
+
+<div id="logs" class="screen">
+<h2>Mileage Logs</h2>
+<div id="logList"></div>
+</div>
+
+<div id="settings" class="screen">
+<h2>API Configuration</h2>
+<p style="font-size:14px; color:#555;">Get a free API key from Google AI Studio.</p>
+<input type="password" id="apikey" placeholder="Enter Gemini API Key">
+<button class="success" onclick="saveKey()">Save Key</button>
+</div>
+
+<script>
+function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
+    document.getElementById(id).style.display = 'block';
+}
+
+function loadKey() {
+    document.getElementById('apikey').value = localStorage.getItem('vision_key') || '';
+}
+
+function saveKey() {
+    localStorage.setItem('vision_key', document.getElementById('apikey').value);
+    alert('API Key Saved!');
+}
+
+function read(file) {
+    return new Promise(res => {
+        let reader = new FileReader();
+        reader.onload = e => res(e.target.result);
+        reader.readAsDataURL(file);
+    });
+}
+
+async function extractData() {
+    let key = localStorage.getItem('vision_key');
+    if (!key) return alert('Please save your API key in Config first!');
+    
+    let pic = document.getElementById('pic').files[0];
+    if (!pic) return alert('Please upload a picture first!');
+    
+    let btn = document.getElementById('extractBtn');
+    btn.innerText = 'Extracting... (Please wait)';
+    
+    try {
+        let dataUrl = await read(pic);
+        let base64 = dataUrl.split(',')[1];
+        let mime = dataUrl.split(';')[0].split(':')[1];
+        
+        let req = {
+        contents: [{
+        parts: [
+            { 
+                text: "Analyze the attached image containing a fuel receipt and a vehicle odometer.\n" +
+                      "1. Odometer (odo): Look at the mechanical/digital odometer dial. Note that the rightmost/last digit often represents tenths of a kilometer (separated by a white/black contrast or decimal box). Return this as a decimal number (e.g., 23935.4, NOT 239354).\n" +
+                      "2. Fuel Added (liters): Extract the quantity/volume in liters from the receipt.\n" +
+                      "3. Price (price): Extract the total billing amount in INR.\n" +
+                      "4. Bunk Name (bunk): Extract the petrol station or dealer name.\n" +
+                      "Return STRICTLY a JSON object with keys: 'odo', 'liters', 'price', 'bunk'. Do not include markdown blocks, notes, or any other text."
+            },
+            { inline_data: { mime_type: mime, data: base64 } }
+        ]
+        }]
+        };
+        
+        let res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + key, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req)
+        });
+        
+        let jsonRes = await res.json();
+        let rawText = jsonRes.candidates[0].content.parts[0].text;
+        
+        rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        let data = JSON.parse(rawText);
+        
+        if (data.odo && data.odo > 99999) {
+            data.odo = (data.odo / 10).toFixed(1);
+        }
+        
+        document.getElementById('odo').value = data.odo || '';
+        document.getElementById('liters').value = data.liters || '';
+        document.getElementById('price').value = data.price || '';
+        document.getElementById('bunk').value = data.bunk || '';
+        alert('Extraction Complete! Please verify the values.');
+    } catch (err) {
+        alert('Extraction failed. Try again or enter manually.');
+        console.error(err);
+    }
+    btn.innerText = '🪄 Auto-Extract from Photo';
+}
+
+async function save() {
+    let pic = document.getElementById('pic').files[0];
+    let dataUrl = pic ? await read(pic) : '';
+    
+    let entry = {
+        date: new Date().toLocaleDateString(),
+        odo: parseFloat(document.getElementById('odo').value),
+        liters: parseFloat(document.getElementById('liters').value),
+        price: parseFloat(document.getElementById('price').value),
+        bunk: document.getElementById('bunk').value,
+        pic: dataUrl
+    };
+    
+    let logs = JSON.parse(localStorage.getItem('logs') || '[]');
+    logs.push(entry);
+    localStorage.setItem('logs', JSON.stringify(logs));
+    
+    alert('Entry saved successfully!');
+    document.querySelectorAll('#home input:not([type="file"])').forEach(i => i.value = '');
+}
+
+function loadLogs() {
+    let logs = JSON.parse(localStorage.getItem('logs') || '[]');
+    let html = '';
+    
+    for (let i = logs.length - 1; i >= 0; i--) {
+        let prevOdo = i > 0 ? logs[i-1].odo : null;
+        let mileageText = prevOdo !== null 
+            ? (((logs[i].odo - prevOdo) / logs[i].liters).toFixed(2) + ' km/l') 
+            : 'First Entry (Baseline)';
+        
+        html += `<div class="log-item">
+            <p><b>Date:</b> ${logs[i].date} | <b>Bunk:</b> ${logs[i].bunk}</p>
+            <p><b>Odo:</b> ${logs[i].odo} km | <b>Mileage:</b> ${mileageText}</p>
+            <p><b>Bill:</b> ₹${logs[i].price} (${logs[i].liters} L)</p>
+            ${logs[i].pic ? `<img src="${logs[i].pic}">` : ''}
+        </div>`;
+    }
+    
+    document.getElementById('logList').innerHTML = html;
+}
+window.addEventListener('DOMContentLoaded', () => {
+    let savedKey = localStorage.getItem('vision_key');
+    if (savedKey) {
+        let input = document.getElementById('apikey');
+        if (input) input.value = savedKey;
+    }
+});
+</script>
+</body>
+</html>
