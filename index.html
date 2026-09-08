@@ -1,36 +1,41 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#007bff">
+<title>Mileage Tracker</title>
 <style>
-body { font-family: sans-serif; margin: 0; padding: 15px; background: #f4f4f4; }
-input, button { width: 100%; margin-bottom: 12px; padding: 12px; box-sizing: border-box; font-size: 16px; }
-.screen { display: none; background: #fff; padding: 15px; border-radius: 8px; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 15px; background: #f4f4f4; }
+input, button { width: 100%; margin-bottom: 12px; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; }
+.screen { display: none; background: #fff; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 #home { display: block; }
-.log-item { border-bottom: 2px solid #eee; padding-bottom: 15px; margin-bottom: 15px; }
-img { max-width: 100%; height: auto; border-radius: 4px; margin-top: 10px; }
+.log-item { border-bottom: 1px solid #eee; padding-bottom: 12px; margin-bottom: 12px; }
 nav { display: flex; gap: 10px; margin-bottom: 15px; }
-nav button { margin-bottom: 0; background: #007bff; color: white; border: none; border-radius: 4px; }
+nav button { margin-bottom: 0; background: #007bff; color: white; border: none; font-weight: bold; }
 button.success { background: #28a745; color: white; border: none; font-weight: bold; }
-button.warning { background: #ffc107; color: black; border: none; font-weight: bold; }
+button.warning { background: #ffc107; color: #000; border: none; font-weight: bold; }
+button:disabled { opacity: 0.6; }
 </style>
 </head>
 <body>
 <nav>
-<button onclick="show('home')">Home</button>
-<button onclick="show('logs'); loadLogs()">Logs</button>
-<button onclick="show('settings'); loadKey()">Config</button>
+<button type="button" onclick="show('home')">Home</button>
+<button type="button" onclick="show('logs'); loadLogs()">Logs</button>
+<button type="button" onclick="show('settings')">Config</button>
 </nav>
 
 <div id="home" class="screen">
 <h2>New Fuel Entry</h2>
 <input type="file" id="pic" accept="image/*">
-<button class="warning" onclick="extractData()" id="extractBtn">🪄 Auto-Extract from Photo</button>
-<input type="number" id="odo" placeholder="Odometer Reading (km)">
-<input type="number" id="liters" placeholder="Fuel Added (Liters)">
-<input type="number" id="price" placeholder="Total Bill Price (₹)">
+<button type="button" class="warning" onclick="extractData()" id="extractBtn">🪄 Auto-Extract from Photo</button>
+<input type="number" step="any" id="odo" placeholder="Odometer Reading (km)">
+<input type="number" step="any" id="liters" placeholder="Fuel Added (Liters)">
+<input type="number" step="any" id="price" placeholder="Total Bill Price (₹)">
 <input type="text" id="bunk" placeholder="Petrol Bunk Name">
-<button class="success" onclick="save()">Save Log</button>
+<button type="button" class="success" onclick="save()">Save Log</button>
 </div>
 
 <div id="logs" class="screen">
@@ -40,30 +45,57 @@ button.warning { background: #ffc107; color: black; border: none; font-weight: b
 
 <div id="settings" class="screen">
 <h2>API Configuration</h2>
-<p style="font-size:14px; color:#555;">Get a free API key from Google AI Studio.</p>
+<p style="font-size:14px; color:#555;">Enter your Gemini API Key. It is saved locally on your device.</p>
 <input type="password" id="apikey" placeholder="Enter Gemini API Key">
-<button class="success" onclick="saveKey()">Save Key</button>
+<button type="button" class="success" onclick="saveKey()">Save Key</button>
 </div>
 
 <script>
+window.addEventListener('DOMContentLoaded', () => {
+    let savedKey = localStorage.getItem('vision_key');
+    if (savedKey) {
+        document.getElementById('apikey').value = savedKey;
+    }
+});
+
 function show(id) {
     document.querySelectorAll('.screen').forEach(s => s.style.display = 'none');
     document.getElementById(id).style.display = 'block';
 }
 
-function loadKey() {
-    document.getElementById('apikey').value = localStorage.getItem('vision_key') || '';
-}
-
 function saveKey() {
-    localStorage.setItem('vision_key', document.getElementById('apikey').value);
+    let val = document.getElementById('apikey').value.trim();
+    localStorage.setItem('vision_key', val);
     alert('API Key Saved!');
 }
 
-function read(file) {
-    return new Promise(res => {
+function resizeImage(file, maxDimension = 1200) {
+    return new Promise((resolve, reject) => {
         let reader = new FileReader();
-        reader.onload = e => res(e.target.result);
+        reader.onerror = reject;
+        reader.onload = (e) => {
+            let img = new Image();
+            img.onerror = reject;
+            img.onload = () => {
+                let width = img.width;
+                let height = img.height;
+                if (width > height && width > maxDimension) {
+                    height = Math.round((height * maxDimension) / width);
+                    width = maxDimension;
+                } else if (height > maxDimension) {
+                    width = Math.round((width * maxDimension) / height);
+                    height = maxDimension;
+                }
+                let canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                let ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                let dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                resolve(dataUrl);
+            };
+            img.src = e.target.result;
+        };
         reader.readAsDataURL(file);
     });
 }
@@ -71,110 +103,116 @@ function read(file) {
 async function extractData() {
     let key = localStorage.getItem('vision_key');
     if (!key) return alert('Please save your API key in Config first!');
-    
-    let pic = document.getElementById('pic').files[0];
-    if (!pic) return alert('Please upload a picture first!');
-    
+
+    let fileInput = document.getElementById('pic');
+    if (!fileInput.files || fileInput.files.length === 0) {
+        return alert('Please select or snap a picture first!');
+    }
+
     let btn = document.getElementById('extractBtn');
-    btn.innerText = 'Extracting... (Please wait)';
-    
+    btn.disabled = true;
+    btn.innerText = 'Compressing & Reading...';
+
     try {
-        let dataUrl = await read(pic);
+        let dataUrl = await resizeImage(fileInput.files[0]);
         let base64 = dataUrl.split(',')[1];
-        let mime = dataUrl.split(';')[0].split(':')[1];
-        
+
         let req = {
-        contents: [{
-        parts: [
-            { 
-                text: "Analyze the attached image containing a fuel receipt and a vehicle odometer.\n" +
-                      "1. Odometer (odo): Look at the mechanical/digital odometer dial. Note that the rightmost/last digit often represents tenths of a kilometer (separated by a white/black contrast or decimal box). Return this as a decimal number (e.g., 23935.4, NOT 239354).\n" +
-                      "2. Fuel Added (liters): Extract the quantity/volume in liters from the receipt.\n" +
-                      "3. Price (price): Extract the total billing amount in INR.\n" +
-                      "4. Bunk Name (bunk): Extract the petrol station or dealer name.\n" +
-                      "Return STRICTLY a JSON object with keys: 'odo', 'liters', 'price', 'bunk'. Do not include markdown blocks, notes, or any other text."
-            },
-            { inline_data: { mime_type: mime, data: base64 } }
-        ]
-        }]
+            contents: [{
+                parts: [
+                    { 
+                        text: "Analyze the attached image containing a fuel receipt and a vehicle odometer.\n" +
+                              "1. Odometer (odo): Look at the mechanical/digital odometer dial. Note that the rightmost/last digit often represents tenths of a kilometer (separated by a white/black contrast or decimal box). Return this as a decimal number (e.g., 23935.4, NOT 239354).\n" +
+                              "2. Fuel Added (liters): Extract the quantity/volume in liters from the receipt.\n" +
+                              "3. Price (price): Extract the total billing amount in INR.\n" +
+                              "4. Bunk Name (bunk): Extract the petrol station or dealer name.\n" +
+                              "Return STRICTLY a JSON object with keys: 'odo', 'liters', 'price', 'bunk'. Do not include markdown blocks, notes, or any other text."
+                    },
+                    { inline_data: { mime_type: "image/jpeg", data: base64 } }
+                ]
+            }]
         };
-        
-        let res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=' + key, {
+
+        let res = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=' + key, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(req)
         });
-        
+
         let jsonRes = await res.json();
+        if (jsonRes.error) {
+            throw new Error(jsonRes.error.message || 'API call failed');
+        }
+
         let rawText = jsonRes.candidates[0].content.parts[0].text;
-        
-        rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+        rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
         let data = JSON.parse(rawText);
-        
+
         if (data.odo && data.odo > 99999) {
             data.odo = (data.odo / 10).toFixed(1);
         }
-        
+
         document.getElementById('odo').value = data.odo || '';
         document.getElementById('liters').value = data.liters || '';
         document.getElementById('price').value = data.price || '';
         document.getElementById('bunk').value = data.bunk || '';
-        alert('Extraction Complete! Please verify the values.');
+
+        alert('Extraction complete! Please check and confirm the values.');
     } catch (err) {
-        alert('Extraction failed. Try again or enter manually.');
         console.error(err);
+        alert('Extraction error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '🪄 Auto-Extract from Photo';
     }
-    btn.innerText = '🪄 Auto-Extract from Photo';
 }
 
-async function save() {
-    let pic = document.getElementById('pic').files[0];
-    let dataUrl = pic ? await read(pic) : '';
-    
+function save() {
+    let odoVal = parseFloat(document.getElementById('odo').value);
+    let litersVal = parseFloat(document.getElementById('liters').value);
+    let priceVal = parseFloat(document.getElementById('price').value);
+    let bunkVal = document.getElementById('bunk').value.trim();
+
+    if (isNaN(odoVal) || isNaN(litersVal) || isNaN(priceVal)) {
+        alert('Please enter valid numbers for Odometer, Liters, and Price.');
+        return;
+    }
+
     let entry = {
         date: new Date().toLocaleDateString(),
-        odo: parseFloat(document.getElementById('odo').value),
-        liters: parseFloat(document.getElementById('liters').value),
-        price: parseFloat(document.getElementById('price').value),
-        bunk: document.getElementById('bunk').value,
-        pic: dataUrl
+        odo: odoVal,
+        liters: litersVal,
+        price: priceVal,
+        bunk: bunkVal || 'Unknown Station'
     };
-    
+
     let logs = JSON.parse(localStorage.getItem('logs') || '[]');
     logs.push(entry);
     localStorage.setItem('logs', JSON.stringify(logs));
-    
+
     alert('Entry saved successfully!');
-    document.querySelectorAll('#home input:not([type="file"])').forEach(i => i.value = '');
+    document.querySelectorAll('#home input').forEach(i => i.value = '');
 }
 
 function loadLogs() {
     let logs = JSON.parse(localStorage.getItem('logs') || '[]');
     let html = '';
-    
+
     for (let i = logs.length - 1; i >= 0; i--) {
-        let prevOdo = i > 0 ? logs[i-1].odo : null;
-        let mileageText = prevOdo !== null 
-            ? (((logs[i].odo - prevOdo) / logs[i].liters).toFixed(2) + ' km/l') 
+        let prevOdo = i > 0 ? logs[i - 1].odo : null;
+        let mileageText = prevOdo !== null
+            ? (((logs[i].odo - prevOdo) / logs[i].liters).toFixed(2) + ' km/l')
             : 'First Entry (Baseline)';
-        
+
         html += `<div class="log-item">
             <p><b>Date:</b> ${logs[i].date} | <b>Bunk:</b> ${logs[i].bunk}</p>
             <p><b>Odo:</b> ${logs[i].odo} km | <b>Mileage:</b> ${mileageText}</p>
             <p><b>Bill:</b> ₹${logs[i].price} (${logs[i].liters} L)</p>
-            ${logs[i].pic ? `<img src="${logs[i].pic}">` : ''}
         </div>`;
     }
-    
-    document.getElementById('logList').innerHTML = html;
+
+    document.getElementById('logList').innerHTML = html || '<p>No logs found.</p>';
 }
-window.addEventListener('DOMContentLoaded', () => {
-    let savedKey = localStorage.getItem('vision_key');
-    if (savedKey) {
-        let input = document.getElementById('apikey');
-        if (input) input.value = savedKey;
-    }
-});
 </script>
 </body>
 </html>
